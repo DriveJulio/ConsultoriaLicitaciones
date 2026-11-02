@@ -67,7 +67,12 @@ def _clasificar(aviso: dict[str, str], cuerpo: str) -> dict:
         "(compras, obra pública, PPP, concesiones, compre argentino, redeterminación de precios, "
         "procedimientos de la ONC, montos/módulos, integridad o ética pública aplicada a contrataciones)? "
         "Basate solo en el texto. Si no afecta, relevante=false e impacto='nulo'.",
-        contexto=f"<aviso url=\"{aviso['url']}\">\n<titulo>{aviso['texto']}</titulo>\n{cuerpo[:150000]}\n</aviso>",
+        contexto=(
+            f"<aviso url=\"{aviso['url']}\">\n<titulo>{aviso['texto']}</titulo>\n<extracto>\n"
+            + llm.lector(cuerpo, "norma publicada, qué modifica/deroga/crea, artículos clave, vigencia, "
+                                 "montos/módulos/plazos, organismo y alcance")
+            + "\n</extracto>\n</aviso>"
+        ),
         schema=SCHEMA_CLASIFICACION,
     )
 

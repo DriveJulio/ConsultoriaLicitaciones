@@ -37,13 +37,14 @@ HERRAMIENTAS: list[dict[str, Any]] = [
         "name": "leer_archivo",
         "description": (
             "Lee un archivo de la base de conocimiento o del estado del sistema. Rutas relativas permitidas: "
-            "knowledge/*, config/*, data/*, reports/*. Ej: knowledge/marco_normativo.md, config/expedientes.yaml."
+            "knowledge/*, config/*, data/*, reports/*. Ej: knowledge/marco_normativo.md, config/expedientes.yaml. "
+            "Si el archivo es largo, un lector devuelve un extracto según 'foco' (qué necesitás de él)."
         ),
         "strict": True,
         "input_schema": {
             "type": "object",
-            "properties": {"ruta": {"type": "string"}},
-            "required": ["ruta"],
+            "properties": {"ruta": {"type": "string"}, "foco": {"type": "string"}},
+            "required": ["ruta", "foco"],
             "additionalProperties": False,
         },
     },
@@ -71,7 +72,7 @@ HERRAMIENTAS: list[dict[str, Any]] = [
 _PERMITIDOS = ("knowledge", "config", "data", "reports")
 
 
-def _leer_archivo(ruta: str) -> str:
+def _leer_archivo(ruta: str, foco: str = "") -> str:
     p = (config.ROOT / ruta).resolve()
     root = config.ROOT.resolve()
     if not any(p.is_relative_to(root / d) for d in _PERMITIDOS):
@@ -80,7 +81,9 @@ def _leer_archivo(ruta: str) -> str:
         return "\n".join(sorted(str(x.relative_to(root)) for x in p.rglob("*") if x.is_file()))[:20000]
     if not p.exists():
         return f"ERROR: no existe {ruta}"
-    return p.read_text(encoding="utf-8")[:200000]
+    contenido = p.read_text(encoding="utf-8")
+    # Archivos largos los lee Haiku: el orquestador (Fable) recibe solo el extracto.
+    return llm.lector(contenido, foco or "todo lo relevante para la tarea")
 
 
 class Orquestador:
@@ -92,7 +95,7 @@ class Orquestador:
         self.registros: list[dict] = []
         self._handlers: dict[str, Callable[[dict], str]] = {
             "delegar_a_analista": self._delegar,
-            "leer_archivo": lambda i: _leer_archivo(i["ruta"]),
+            "leer_archivo": lambda i: _leer_archivo(i["ruta"], i.get("foco", "")),
             "registrar": self._registrar,
         }
 
@@ -124,7 +127,9 @@ class Orquestador:
             betas=[config.FALLBACK_BETA],
             fallbacks="default",
         ) as stream:
-            return stream.get_final_message()
+            resp = stream.get_final_message()
+        llm._contar(resp)
+        return resp
 
     def enviar(self, mensaje: str) -> str:
         """Envía un mensaje y corre el loop de herramientas hasta la respuesta final."""

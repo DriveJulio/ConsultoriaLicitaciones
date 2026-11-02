@@ -86,7 +86,10 @@ def _analizar(exp: dict, diff: str, nuevos_links: list[dict], texto: str) -> dic
             f"Nombre: {exp.get('nombre', '')}\nNotas internas: {exp.get('notas', '')}\n"
             f"Fecha y hora del control: {config.ahora():%Y-%m-%d %H:%M} (Argentina)\n</proceso>\n"
             f"<diff>\n{diff}\n</diff>\n<documentos_nuevos>\n{nuevos_links}\n</documentos_nuevos>\n"
-            f"<pagina_actual>\n{texto[:120000]}\n</pagina_actual>"
+            f"<extracto_pagina_actual>\n"
+            + llm.lector(texto, "etapa del proceso, fechas de apertura/evaluación/adjudicación, oferentes y montos, "
+                                "circulares, actas, dictámenes, impugnaciones, prórrogas, plazos y documentos")
+            + "\n</extracto_pagina_actual>"
         ),
         schema=SCHEMA_NOVEDAD,
     )

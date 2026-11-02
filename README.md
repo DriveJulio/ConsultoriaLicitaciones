@@ -13,8 +13,13 @@ mejora de forma continua a partir del diálogo entre dos orquestadores.
                               │ delegar_a_analista                │
                               ▼                                   ▼
                  ┌────────────────────────────────────────────────────────────┐
-                 │   ANALISTAS (Opus 5.5, esfuerzo medio) — hacen el trabajo  │
-                 │   web oficial: BO, InfoLEG, SAIJ, COMPR.AR, CONTRAT.AR, PTN │
+                 │   ANALISTAS (Opus 5.5, esfuerzo medio) — analizan y concluyen│
+                 └──────────────────────────────┬─────────────────────────────┘
+                                                │ leer_url / extractos
+                 ┌──────────────────────────────▼─────────────────────────────┐
+                 │   LECTORES (Haiku 5.5, esfuerzo bajo) — leen el material   │
+                 │   crudo (BO, COMPR.AR, CONTRAT.AR, InfoLEG, archivos) y     │
+                 │   devuelven un extracto fiel con citas textuales           │
                  └────────────────────────────────────────────────────────────┘
    Monitores:  Boletín Oficial (diario)  ·  Expedientes (09:00 / 14:00 / 18:30)
    Salidas:    reports/  ·  data/registro.jsonl  ·  issues de GitHub con label "alerta"
@@ -22,7 +27,13 @@ mejora de forma continua a partir del diálogo entre dos orquestadores.
 
 - **Especialista** (Fable): decide, delega, verifica plazos y registra alertas/decisiones.
 - **Asesor** (Fable): audita el criterio del Especialista y propone mejoras al sistema.
-- **Analistas** (Opus 5.5, `effort: medium`): leen normas, pliegos, actas y dictámenes; buscan en web oficial.
+- **Analistas** (Opus 5.5, `effort: medium`): analizan extractos de normas, pliegos, actas y dictámenes;
+  buscan fuentes con `web_search` y las leen con `leer_url`.
+- **Lectores** (Haiku 5.5, `effort: low`): toda lectura de material crudo pasa por acá (avisos del BO, páginas
+  de expedientes, URLs, archivos largos). Copian textual normas, artículos, fechas, plazos y montos, y descartan
+  el ruido. El material se parte en bloques de ~80K tokens para quedar en la tarifa baja de Haiku. Textos
+  cortos (< 12.000 caracteres) pasan directo, porque resumirlos no ahorra. Cada reporte incluye una tabla de
+  tokens por modelo (y `data/uso_tokens.jsonl` guarda el histórico).
 - Las propuestas que cambian el sistema o el criterio legal **no se auto-aplican**: quedan para aprobación humana.
 
 ## Horarios (hora Argentina, GitHub Actions)
@@ -67,9 +78,12 @@ pytest -q
 |---|---|
 | `LIC_ORQ_MODEL` / `LIC_ORQ_EFFORT` | `claude-fable-5-1` / `high` |
 | `LIC_WORKER_MODEL` / `LIC_WORKER_EFFORT` | `claude-opus-5-5` / `medium` |
+| `LIC_LECTOR_MODEL` / `LIC_LECTOR_EFFORT` | `claude-haiku-5-5` / `low` |
+| `LIC_LECTOR_UMBRAL` / `LIC_LECTOR_CHARS` | `12000` / `280000` (umbral para resumir / tamaño de bloque) |
 
-Todas las llamadas usan `fallbacks: "default"`: si un modelo rechaza una consulta, el servidor la
-reintenta con un modelo alternativo.
+Las llamadas a Fable y Opus usan `fallbacks: "default"`: si el modelo rechaza una consulta, el servidor la
+reintenta con un modelo alternativo. Haiku no tiene ese fallback: si rechaza un bloque, el analista recibe el
+texto original recortado.
 
 ## Límites conocidos
 

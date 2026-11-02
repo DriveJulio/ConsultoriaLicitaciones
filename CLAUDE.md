@@ -2,6 +2,7 @@
 
 Sistema agéntico de licitaciones (Argentina). Ver README.md para arquitectura.
 
+- Lectores: `claude-haiku-5-5` (`effort: low`) leen todo material crudo (`llm.lector` / `leer_url`); Opus recibe extractos.
 - Orquestadores: `claude-fable-5-1` (Especialista y Asesor). Analistas: `claude-opus-5-5` con `effort: medium`.
 - Historial de los orquestadores es append-only (preserved thinking): no editar mensajes previos.
 - Fable 5.1 / Opus 5.5: no usar `tool_choice` any/tool, ni `thinking` disabled/budget_tokens.

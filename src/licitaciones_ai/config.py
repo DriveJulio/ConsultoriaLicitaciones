@@ -15,6 +15,16 @@ ORQUESTADOR_EFFORT = os.getenv("LIC_ORQ_EFFORT", "high")
 WORKER_MODEL = os.getenv("LIC_WORKER_MODEL", "claude-opus-5-5")
 WORKER_EFFORT = os.getenv("LIC_WORKER_EFFORT", "medium")
 
+# Lectores: Claude Haiku 5.5 lee el material crudo (avisos, páginas, documentos) y entrega
+# un extracto fiel a los analistas. Ahorra tokens caros en lectura.
+LECTOR_MODEL = os.getenv("LIC_LECTOR_MODEL", "claude-haiku-5-5")
+LECTOR_EFFORT = os.getenv("LIC_LECTOR_EFFORT", "low")
+# Haiku 5.5 cobra 5x por encima de 100K tokens de prompt: se parte el material en bloques
+# de ~80K tokens (~280K caracteres en español) para quedar siempre en la tarifa baja.
+LECTOR_CHARS_POR_BLOQUE = int(os.getenv("LIC_LECTOR_CHARS", "280000"))
+# Por debajo de este tamaño no conviene resumir: se pasa el texto tal cual.
+LECTOR_UMBRAL_CHARS = int(os.getenv("LIC_LECTOR_UMBRAL", "12000"))
+
 # Fallback del lado del servidor si un modelo rechaza la consulta.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 

@@ -112,3 +112,69 @@ def test_leer_archivo_bloquea_rutas_fuera():
     from licitaciones_ai.agents.orquestador import _leer_archivo
 
     assert _leer_archivo("../../etc/passwd").startswith("ERROR")
+
+
+# --- Lector (Haiku) ---------------------------------------------------------------
+class _Stream:
+    def __init__(self, resp):
+        self.resp = resp
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get_final_message(self):
+        return self.resp
+
+
+def _resp(texto="", stop="end_turn", content=None, model="m"):
+    return SimpleNamespace(stop_reason=stop, model=model, usage=None,
+                           content=content or [SimpleNamespace(type="text", text=texto)])
+
+
+def test_lector_no_resume_material_corto(monkeypatch):
+    from licitaciones_ai import llm
+
+    monkeypatch.setattr(llm, "client", lambda: (_ for _ in ()).throw(AssertionError("no debe llamar")))
+    assert llm.lector("texto corto") == "texto corto"
+
+
+def test_lector_parte_en_bloques_y_usa_haiku(monkeypatch):
+    from licitaciones_ai import llm
+
+    monkeypatch.setattr(config, "LECTOR_UMBRAL_CHARS", 10)
+    monkeypatch.setattr(config, "LECTOR_CHARS_POR_BLOQUE", 100)
+    modelos = []
+
+    def stream(**kw):
+        modelos.append(kw["model"])
+        return _Stream(_resp("extracto"))
+
+    monkeypatch.setattr(llm, "client", lambda: SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    out = llm.lector("línea de material\n" * 30, "plazos")
+    assert len(modelos) > 1 and set(modelos) == {config.LECTOR_MODEL}
+    assert out.count("extracto") == len(modelos)
+
+
+def test_analista_lee_urls_via_lector(monkeypatch):
+    from licitaciones_ai import llm
+
+    respuestas = iter([
+        _resp(stop="tool_use", content=[SimpleNamespace(type="tool_use", id="u1", name="leer_url",
+                                                        input={"url": "https://x.gob.ar/a", "foco": "plazos"})]),
+        _resp("conclusión"),
+    ])
+    enviados = []
+
+    def stream(**kw):
+        enviados.append(kw)
+        return _Stream(next(respuestas))
+
+    monkeypatch.setattr(llm, "client", lambda: SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=stream))))
+    monkeypatch.setattr(llm, "leer_url", lambda url, foco: f"<extracto url=\"{url}\">ok</extracto>")
+    assert llm.analista("tarea", usar_web=True) == "conclusión"
+    assert enviados[0]["model"] == config.WORKER_MODEL
+    assert [t.get("name") for t in enviados[0]["tools"]] == ["web_search", "leer_url"]
+    assert enviados[1]["messages"][-1]["content"][0]["tool_use_id"] == "u1"

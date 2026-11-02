@@ -60,5 +60,10 @@ def guardar_reporte(nombre: str, contenido: str) -> Path:
     fecha = config.ahora()
     path = config.REPORTS_DIR / fecha.strftime("%Y-%m-%d") / f"{fecha:%H%M}-{nombre}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(contenido.strip() + "\n", encoding="utf-8")
+    from . import llm
+
+    path.write_text(contenido.strip() + llm.resumen_uso() + "\n", encoding="utf-8")
+    if llm.USO:
+        agregar_jsonl(config.DATA_DIR / "uso_tokens.jsonl",
+                      {"fecha": fecha.isoformat(timespec="minutes"), "tarea": nombre, "uso": llm.USO})
     return path
