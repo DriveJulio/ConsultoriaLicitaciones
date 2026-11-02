@@ -98,10 +98,10 @@ def ejecutar(dia: date | None = None) -> str:
     relevantes: list[dict] = []
     fuente = "directa"
     try:
-        html = web.descargar(url_seccion(dia))
+        html = web.descargar(url_seccion(dia), motivo="boletin: sumario primera seccion")
         candidatos = [a for a in filtrar(extraer_avisos(html), palabras_clave()) if a["url"] not in procesados]
         for aviso in candidatos:
-            cuerpo = web.texto_visible(web.descargar(aviso["url"]))
+            cuerpo = web.texto_visible(web.descargar(aviso["url"], motivo="boletin: aviso candidato"))
             clasif = _clasificar(aviso, cuerpo)
             procesados.add(aviso["url"])
             if clasif["relevante"] and clasif["impacto"] != "nulo":

@@ -26,6 +26,7 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       TZ: America/Argentina/Buenos_Aires
+      LIC_CONTACTO: ${{ vars.LIC_CONTACTO }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

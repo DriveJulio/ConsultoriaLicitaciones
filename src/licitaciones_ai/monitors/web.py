@@ -3,24 +3,117 @@ from __future__ import annotations
 
 import hashlib
 import re
-from urllib.parse import urljoin
+import threading
+import time
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
 from .. import config
 
 
-def descargar(url: str, timeout: float = 45.0) -> str:
+class BloqueadoPorRobots(PermissionError):
+    """El robots.txt del sitio no permite leer esa URL: no se lee."""
+
+
+class DominioPausado(PermissionError):
+    """El portal nos frenó (403/429/503): se pausa 24 h y se pasa a revisión manual."""
+
+
+HORAS_PAUSA = 24
+CODIGOS_FRENO = {403, 429, 503}
+PAUSAS = config.DATA_DIR / "dominios_pausados.json"
+
+
+_lock = threading.Lock()
+_ultimo_pedido: dict[str, float] = {}
+_robots: dict[str, RobotFileParser | None] = {}
+
+
+def _cliente(timeout: float):
     import httpx
 
-    with httpx.Client(
+    return httpx.Client(
         headers={"User-Agent": config.USER_AGENT, "Accept-Language": "es-AR,es;q=0.9"},
         follow_redirects=True,
         timeout=timeout,
-    ) as c:
-        r = c.get(url)
+    )
+
+
+def _esperar_turno(dominio: str) -> None:
+    """Respeta un intervalo mínimo entre pedidos al mismo dominio."""
+    while True:
+        with _lock:
+            espera = _ultimo_pedido.get(dominio, 0) + config.SEGUNDOS_ENTRE_PEDIDOS - time.monotonic()
+            if espera <= 0:
+                _ultimo_pedido[dominio] = time.monotonic()
+                return
+        time.sleep(espera)
+
+
+def _permitido(url: str) -> bool:
+    u = urlparse(url)
+    base = f"{u.scheme}://{u.netloc}"
+    if base not in _robots:
+        rp: RobotFileParser | None = RobotFileParser()
+        try:
+            _esperar_turno(u.netloc)
+            with _cliente(20) as c:
+                r = c.get(base + "/robots.txt")
+            if r.status_code >= 400:
+                rp = None  # sin robots.txt: no hay restricciones declaradas
+            else:
+                rp.parse(r.text.splitlines())
+        except Exception:
+            rp = None
+        _robots[base] = rp
+    rp = _robots[base]
+    return True if rp is None else rp.can_fetch(config.USER_AGENT, url)
+
+
+def _bitacora(url: str, motivo: str, resultado: str) -> None:
+    from .. import state
+
+    state.agregar_jsonl(config.DATA_DIR / "accesos.jsonl", {
+        "fecha": config.ahora().isoformat(timespec="seconds"), "url": url, "motivo": motivo, "resultado": resultado,
+    })
+
+
+def descargar(url: str, timeout: float = 45.0, motivo: str = "") -> str:
+    """Descarga una página pública respetando robots.txt, ritmo por dominio y dejando bitácora."""
+    from .. import state
+
+    dominio = urlparse(url).netloc
+    pausas = state.leer_json(PAUSAS, {})
+    if dominio in pausas and pausas[dominio] > config.ahora().isoformat():
+        _bitacora(url, motivo, f"no leído: dominio pausado hasta {pausas[dominio]}")
+        raise DominioPausado(f"{dominio} pausado hasta {pausas[dominio]}")
+    if not _permitido(url):
+        _bitacora(url, motivo, "no leído: robots.txt")
+        raise BloqueadoPorRobots(url)
+    _esperar_turno(dominio)
+    try:
+        with _cliente(timeout) as c:
+            r = c.get(url)
+        if r.status_code in CODIGOS_FRENO:
+            from datetime import timedelta
+
+            hasta = (config.ahora() + timedelta(hours=HORAS_PAUSA)).isoformat(timespec="minutes")
+            pausas[dominio] = hasta
+            state.escribir_json(PAUSAS, pausas)
+            state.registrar("alerta", f"Portal {dominio} frenó el acceso (HTTP {r.status_code})",
+                            f"Se pausa el acceso automático hasta {hasta}. Revisar a mano: {url}", "media", "web")
+            _bitacora(url, motivo, f"freno HTTP {r.status_code}: pausado hasta {hasta}")
+            raise DominioPausado(f"{dominio} respondió {r.status_code}")
         r.raise_for_status()
-        return r.text
+    except DominioPausado:
+        raise
+    except Exception as e:
+        _bitacora(url, motivo, f"error: {type(e).__name__}")
+        raise
+    _bitacora(url, motivo, f"ok {r.status_code}")
+    return r.text
 
 
 def texto_visible(html: str) -> str:

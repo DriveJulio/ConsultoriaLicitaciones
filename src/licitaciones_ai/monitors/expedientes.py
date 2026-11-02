@@ -68,7 +68,7 @@ def diferencias(anterior: str, actual: str, max_lineas: int = 400) -> str:
 
 
 def foto(exp: dict) -> dict:
-    html = web.descargar(exp["url"])
+    html = web.descargar(exp["url"], motivo=f"expediente {exp['id']}")
     texto = normalizar(web.texto_visible(html))
     links = [l for l in web.enlaces(html, exp["url"]) if l["texto"] or l["url"].lower().endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip"))]
     return {"texto": texto, "enlaces": links, "huella": web.huella(texto + "".join(sorted(l["url"] for l in links)))}

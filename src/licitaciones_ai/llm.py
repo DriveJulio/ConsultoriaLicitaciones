@@ -50,26 +50,42 @@ def _contar(resp) -> None:
 
 
 # --- Lector (Haiku 5.5) --------------------------------------------------------
-def _bloques(material: str, tam: int) -> list[str]:
-    if len(material) <= tam:
-        return [material]
-    partes, i = [], 0
-    while i < len(material):
-        fin = min(i + tam, len(material))
-        corte = material.rfind("\n", i + tam // 2, fin) if fin < len(material) else fin
-        fin = corte if corte > i else fin
-        partes.append(material[i:fin])
-        i = fin
-    return partes
+# Material crudo leído en esta ejecución, para preguntas de seguimiento y ver_fragmento.
+FUENTES: dict[str, list[str]] = {}
 
 
-def _leer_bloque(bloque: str, foco: str, n: int, total: int) -> str:
-    parte = f" (parte {n} de {total})" if total > 1 else ""
+def _registrar_fuente(material: str) -> str:
+    import hashlib
+
+    fid = "f_" + hashlib.sha1(material.encode("utf-8")).hexdigest()[:8]
+    FUENTES.setdefault(fid, material.splitlines())
+    return fid
+
+
+def _numerar(lineas: list[str], desde: int) -> str:
+    return "\n".join(f"L{desde + i}| {l}" for i, l in enumerate(lineas))
+
+
+def _bloques_numerados(fid: str) -> list[str]:
+    """Bloques del material con número de línea, para que Haiku cite la ubicación exacta."""
+    lineas, bloques, actual, tam, inicio = FUENTES[fid], [], [], 0, 1
+    for n, l in enumerate(lineas, 1):
+        if actual and tam + len(l) > config.LECTOR_CHARS_POR_BLOQUE:
+            bloques.append(_numerar(actual, inicio))
+            actual, tam, inicio = [], 0, n
+        actual.append(l)
+        tam += len(l) + 8
+    if actual:
+        bloques.append(_numerar(actual, inicio))
+    return bloques
+
+
+def _haiku(instruccion: str, bloque: str) -> str:
     with client().messages.stream(
         model=config.LECTOR_MODEL,
         max_tokens=16000,
         system=[{"type": "text", "text": SYSTEM_LECTOR, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": f"<foco>{foco}</foco>\n<material{parte}>\n{bloque}\n</material>"}],
+        messages=[{"role": "user", "content": f"{instruccion}\n<material>\n{bloque}\n</material>"}],
         output_config={"effort": config.LECTOR_EFFORT},
     ) as stream:
         resp = stream.get_final_message()
@@ -80,14 +96,43 @@ def _leer_bloque(bloque: str, foco: str, n: int, total: int) -> str:
     return texto(resp)
 
 
+def _en_paralelo(fn, items: list) -> list:
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return list(pool.map(fn, items))
+
+
 def lector(material: str, foco: str = "datos con valor legal, plazos y documentos") -> str:
-    """Devuelve un extracto fiel del material. Si es corto, lo devuelve tal cual (no ahorra leerlo)."""
+    """Devuelve un extracto fiel del material, con id de fuente para preguntas de seguimiento.
+
+    Si es corto, lo devuelve tal cual (resumirlo no ahorra)."""
     if len(material) <= config.LECTOR_UMBRAL_CHARS:
         return material
-    bloques = _bloques(material, config.LECTOR_CHARS_POR_BLOQUE)
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        extractos = list(pool.map(lambda nb: _leer_bloque(nb[1], foco, nb[0], len(bloques)), enumerate(bloques, 1)))
-    return "\n\n".join(extractos)
+    fid = _registrar_fuente(material)
+    bloques = _bloques_numerados(fid)
+    instr = (f"<foco>{foco}</foco>\nIndicá entre corchetes las líneas de donde sale cada dato (ej. [L120-L124]).")
+    extractos = _en_paralelo(lambda b: _haiku(instr, b), bloques)
+    return (f"[fuente {fid} · {len(FUENTES[fid])} líneas · podés usar preguntar_al_lector / ver_fragmento]\n"
+            + "\n\n".join(extractos))
+
+
+def preguntar_al_lector(fuente: str, pregunta: str) -> str:
+    """Opus le pregunta a Haiku algo puntual sobre una fuente ya leída. Respuesta con cita y líneas."""
+    if fuente not in FUENTES:
+        return f"ERROR: fuente desconocida {fuente}. Fuentes disponibles: {', '.join(FUENTES) or '(ninguna)'}"
+    instr = (f"<pregunta>{pregunta}</pregunta>\nRespondé SOLO con lo que dice el material: cita textual entre "
+             "comillas y líneas exactas [Lx-Ly]. Si en este material no está, respondé solamente: NO FIGURA.")
+    respuestas = _en_paralelo(lambda b: _haiku(instr, b), _bloques_numerados(fuente))
+    utiles = [r for r in respuestas if r.strip().upper() != "NO FIGURA"]
+    return "\n\n".join(utiles) if utiles else "NO FIGURA en la fuente."
+
+
+def ver_fragmento(fuente: str, desde: int, hasta: int) -> str:
+    """Devuelve el texto ORIGINAL de esas líneas (máx. 300), para ir al lugar preciso."""
+    if fuente not in FUENTES:
+        return f"ERROR: fuente desconocida {fuente}"
+    lineas = FUENTES[fuente]
+    desde, hasta = max(1, desde), min(len(lineas), hasta, max(1, desde) + 299)
+    return _numerar(lineas[desde - 1:hasta], desde)
 
 
 def leer_url(url: str, foco: str) -> str:
@@ -95,7 +140,7 @@ def leer_url(url: str, foco: str) -> str:
     from .monitors import web
 
     try:
-        crudo = web.texto_visible(web.descargar(url))
+        crudo = web.texto_visible(web.descargar(url, motivo="leer_url (analista)"))
     except Exception as e:
         return f"ERROR al leer {url}: {type(e).__name__}: {e}"
     return f"<extracto url=\"{url}\">\n{lector(crudo, foco)}\n</extracto>"
@@ -116,6 +161,52 @@ HERRAMIENTA_LEER_URL = {
         "additionalProperties": False,
     },
 }
+
+
+HERRAMIENTAS_LECTOR = [
+    {
+        "name": "preguntar_al_lector",
+        "description": (
+            "Si tenés una duda sobre un extracto marcado [fuente f_xxx], preguntale al lector que leyó el original. "
+            "Responde con cita textual y números de línea, o NO FIGURA."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {"fuente": {"type": "string"}, "pregunta": {"type": "string"}},
+            "required": ["fuente", "pregunta"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "ver_fragmento",
+        "description": "Lee el texto ORIGINAL de una fuente entre dos números de línea (máx. 300 líneas).",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {"fuente": {"type": "string"}, "desde": {"type": "integer"}, "hasta": {"type": "integer"}},
+            "required": ["fuente", "desde", "hasta"],
+            "additionalProperties": False,
+        },
+    },
+]
+
+_HANDLERS = {
+    "leer_url": lambda i: leer_url(i["url"], i["foco"]),
+    "preguntar_al_lector": lambda i: preguntar_al_lector(i["fuente"], i["pregunta"]),
+    "ver_fragmento": lambda i: ver_fragmento(i["fuente"], int(i["desde"]), int(i["hasta"])),
+}
+
+
+def _ejecutar_herramienta(bloque) -> dict:
+    try:
+        salida = _HANDLERS[bloque.name](dict(bloque.input))
+    except Exception as e:
+        salida = f"ERROR: {type(e).__name__}: {e}"
+    r = {"type": "tool_result", "tool_use_id": bloque.id, "content": salida}
+    if salida.startswith("ERROR"):
+        r["is_error"] = True
+    return r
 
 
 def _web_search(dominios: list[str] | None) -> dict[str, Any]:
@@ -139,13 +230,13 @@ def analista(
     - usar_web: habilita web_search (dominios oficiales) + leer_url (lectura vía Haiku).
     - schema: si se pasa, devuelve un dict validado por structured outputs.
     """
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {"tools": list(HERRAMIENTAS_LECTOR)}
     output_config: dict[str, Any] = {"effort": config.WORKER_EFFORT}
     if schema:
         output_config["format"] = {"type": "json_schema", "schema": schema}
     if usar_web:
         dom = dominios if dominios is not None else config.DOMINIOS_OFICIALES
-        kwargs["tools"] = [_web_search(dom), HERRAMIENTA_LEER_URL]
+        kwargs["tools"] = [_web_search(dom), HERRAMIENTA_LEER_URL, *HERRAMIENTAS_LECTOR]
 
     contenido = f"{contexto}\n\n<tarea>\n{tarea}\n</tarea>" if contexto else f"<tarea>\n{tarea}\n</tarea>"
     messages: list[dict[str, Any]] = [{"role": "user", "content": contenido}]
@@ -167,16 +258,10 @@ def analista(
         if resp.stop_reason == "pause_turn":  # la búsqueda web pausó el turno
             messages.append({"role": "assistant", "content": resp.content})
             continue
-        usos = [b for b in resp.content if b.type == "tool_use" and b.name == "leer_url"]
+        usos = [b for b in resp.content if b.type == "tool_use" and b.name in _HANDLERS]
         if resp.stop_reason == "tool_use" and usos:
             messages.append({"role": "assistant", "content": resp.content})
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                salidas = list(pool.map(lambda b: leer_url(b.input["url"], b.input["foco"]), usos))
-            messages.append({"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": b.id, "content": s,
-                 **({"is_error": True} if s.startswith("ERROR") else {})}
-                for b, s in zip(usos, salidas)
-            ]})
+            messages.append({"role": "user", "content": _en_paralelo(_ejecutar_herramienta, usos)})
             continue
         break
 

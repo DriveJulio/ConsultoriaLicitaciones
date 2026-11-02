@@ -64,4 +64,8 @@ DOMINIOS_OFICIALES = [
     "sigen.gob.ar",
 ]
 
-USER_AGENT = "Mozilla/5.0 (compatible; LicitacionesAI/0.1; monitoreo de informacion publica)"
+# Identificación transparente: nombre del sistema + contacto de la consultora (sin disfrazarse de navegador).
+CONTACTO = os.getenv("LIC_CONTACTO") or "contacto-pendiente@consultora"
+USER_AGENT = f"LicitacionesAI/0.1 (monitoreo de informacion publica; contacto: {CONTACTO})"
+# Ritmo humano: segundos mínimos entre pedidos al mismo dominio.
+SEGUNDOS_ENTRE_PEDIDOS = float(os.getenv("LIC_SEGUNDOS_ENTRE_PEDIDOS", "5"))

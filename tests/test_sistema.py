@@ -16,6 +16,7 @@ def raiz_temporal(tmp_path, monkeypatch):
     monkeypatch.setattr(expedientes, "DIR_ESTADO", config.DATA_DIR / "expedientes")
     monkeypatch.setattr(boletin, "ESTADO", config.DATA_DIR / "boletin_estado.json")
     monkeypatch.setattr(boletin, "NOVEDADES", config.KNOWLEDGE_DIR / "nov.md")
+    monkeypatch.setattr(web, "PAUSAS", config.DATA_DIR / "dominios_pausados.json")
     return tmp_path
 
 
@@ -50,7 +51,7 @@ def test_expedientes_linea_base_y_novedad(monkeypatch):
         "<html><body><p>Convocatoria</p></body></html>",
         "<html><body><p>Convocatoria</p><a href='/acta.pdf'>Acta de apertura</a></body></html>",
     ])
-    monkeypatch.setattr(web, "descargar", lambda url, timeout=45.0: next(paginas))
+    monkeypatch.setattr(web, "descargar", lambda url, **k: next(paginas))
     llamados = []
 
     def analista_falso(tarea, contexto="", usar_web=False, dominios=None, schema=None, max_tokens=0):
@@ -71,7 +72,7 @@ def test_expedientes_linea_base_y_novedad(monkeypatch):
 def test_expediente_con_fallas_alerta_a_la_tercera(monkeypatch):
     _yaml_expediente()
 
-    def falla(url, timeout=45.0):
+    def falla(url, **k):
         raise ConnectionError("caído")
 
     monkeypatch.setattr(web, "descargar", falla)
@@ -83,7 +84,7 @@ def test_expediente_con_fallas_alerta_a_la_tercera(monkeypatch):
 def test_boletin_sin_novedades(monkeypatch):
     (config.CONFIG_DIR / "normativa.yaml").write_text("palabras_clave_boletin: [contrataciones]\n", encoding="utf-8")
     html = open("tests/fixtures/bo_primera.html", encoding="utf-8").read()
-    monkeypatch.setattr(web, "descargar", lambda url, timeout=45.0: html)
+    monkeypatch.setattr(web, "descargar", lambda url, **k: html)
     monkeypatch.setattr(boletin.llm, "analista", lambda *a, **k: {
         "relevante": False, "tipo_cambio": "ninguno", "norma": "", "normas_afectadas": [],
         "resumen": "", "vigencia": "", "impacto": "nulo", "acciones": []})
@@ -176,5 +177,65 @@ def test_analista_lee_urls_via_lector(monkeypatch):
     monkeypatch.setattr(llm, "leer_url", lambda url, foco: f"<extracto url=\"{url}\">ok</extracto>")
     assert llm.analista("tarea", usar_web=True) == "conclusión"
     assert enviados[0]["model"] == config.WORKER_MODEL
-    assert [t.get("name") for t in enviados[0]["tools"]] == ["web_search", "leer_url"]
+    assert [t.get("name") for t in enviados[0]["tools"]] == ["web_search", "leer_url", "preguntar_al_lector", "ver_fragmento"]
     assert enviados[1]["messages"][-1]["content"][0]["tool_use_id"] == "u1"
+
+
+def test_preguntar_al_lector_y_ver_fragmento(monkeypatch):
+    from licitaciones_ai import llm
+
+    monkeypatch.setattr(config, "LECTOR_UMBRAL_CHARS", 10)
+    monkeypatch.setattr(config, "LECTOR_CHARS_POR_BLOQUE", 200)
+    material = "\n".join(f"renglón {i}" for i in range(1, 61)) + "\nPlazo de impugnación: tres días"
+    vistos = []
+
+    def stream(**kw):
+        cont = kw["messages"][0]["content"]
+        vistos.append(cont)
+        if "<pregunta>" in cont:
+            return _Stream(_resp('"Plazo de impugnación: tres días" [L61]' if "L61|" in cont else "NO FIGURA"))
+        return _Stream(_resp("extracto"))
+
+    monkeypatch.setattr(llm, "client", lambda: SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    ext = llm.lector(material)
+    fid = ext.split()[1]
+    assert fid in llm.FUENTES and "L1| renglón 1" in vistos[0]
+    resp = llm.preguntar_al_lector(fid, "¿plazo de impugnación?")
+    assert resp == '"Plazo de impugnación: tres días" [L61]'
+    assert llm.ver_fragmento(fid, 60, 61) == "L60| renglón 60\nL61| Plazo de impugnación: tres días"
+    assert llm.preguntar_al_lector("f_nada", "x").startswith("ERROR")
+
+
+def test_descargar_respeta_robots_y_deja_bitacora(monkeypatch):
+    monkeypatch.setattr(web, "_permitido", lambda url: False)
+    with pytest.raises(web.BloqueadoPorRobots):
+        web.descargar("https://ejemplo.gob.ar/privado", motivo="test")
+    reg = state.leer_jsonl(config.DATA_DIR / "accesos.jsonl")
+    assert reg[0]["resultado"] == "no leído: robots.txt" and reg[0]["motivo"] == "test"
+
+
+def test_user_agent_identificado():
+    assert config.USER_AGENT.startswith("LicitacionesAI/") and "contacto" in config.USER_AGENT
+
+
+def test_freno_429_pausa_el_dominio(monkeypatch):
+    monkeypatch.setattr(web, "_permitido", lambda url: True)
+    monkeypatch.setattr(web, "_esperar_turno", lambda d: None)
+
+    class C:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            return SimpleNamespace(status_code=429)
+
+    monkeypatch.setattr(web, "_cliente", lambda t: C())
+    with pytest.raises(web.DominioPausado):
+        web.descargar("https://portal.gob.ar/x")
+    monkeypatch.setattr(web, "_cliente", lambda t: (_ for _ in ()).throw(AssertionError("no debe pedir")))
+    with pytest.raises(web.DominioPausado):
+        web.descargar("https://portal.gob.ar/y")
+    assert "frenó el acceso" in (config.OUT_DIR / "alertas.md").read_text(encoding="utf-8")
