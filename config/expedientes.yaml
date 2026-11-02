@@ -1,0 +1,24 @@
+# Procesos/expedientes que la consultora sigue. Se controlan 3 veces por día
+# (09:00, 14:00 y 18:30 hora Argentina) por .github/workflows/expedientes.yml.
+#
+# Campos:
+#   id:         identificador corto y único (se usa como nombre de archivo de estado)
+#   nombre:     descripción del proceso
+#   organismo:  organismo contratante
+#   plataforma: comprar | contratar | provincial | municipal | otro
+#   url:        página PÚBLICA del proceso (vista ciudadana, sin login)
+#   cliente:    para quién lo seguimos (opcional)
+#   notas:      contexto para los agentes (ej. "ofertamos renglones 1 y 3")
+#   activo:     true/false
+#
+# Ejemplo (descomentar y completar):
+# expedientes:
+#   - id: ejemplo-comprar-001
+#     nombre: Licitación Pública N° XX/2026 - Servicio de limpieza
+#     organismo: Ministerio X
+#     plataforma: comprar
+#     url: https://comprar.gob.ar/PLIEGO/VistaPreviaPliegoCiudadano.aspx?qs=...
+#     cliente: Cliente S.A.
+#     notas: Presentamos oferta. Seguir dictamen de evaluación.
+#     activo: true
+expedientes: []

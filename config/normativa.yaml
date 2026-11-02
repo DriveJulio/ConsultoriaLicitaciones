@@ -1,0 +1,33 @@
+# Palabras clave para detectar avisos del Boletín Oficial (primera sección) que pueden
+# afectar contrataciones públicas. Se comparan en minúsculas contra el título del aviso.
+# El filtro es amplio a propósito: después un analista descarta lo irrelevante.
+palabras_clave_boletin:
+  - contratacion
+  - contratación
+  - contrataciones
+  - licitación
+  - licitacion
+  - compras
+  - obra pública
+  - obras públicas
+  - "1023/2001"
+  - "1030/2016"
+  - "13.064"
+  - oficina nacional de contrataciones
+  - participación público privada
+  - participación público-privada
+  - concesión
+  - concesiones
+  - compre argentino
+  - "27.437"
+  - redeterminación de precios
+  - proveedores
+  - procedimientos administrativos
+  - "19.549"
+  - jefatura de gabinete de ministros
+  - secretaría de innovación
+  - "27.401"
+  - integridad
+  - ética pública
+  - "25.188"
+  - "27.742"
