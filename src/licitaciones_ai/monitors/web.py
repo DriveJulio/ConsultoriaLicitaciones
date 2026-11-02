@@ -52,21 +52,26 @@ def _esperar_turno(dominio: str) -> None:
         time.sleep(espera)
 
 
+class RobotsNoDisponible(PermissionError):
+    """No se pudo leer robots.txt (sitio caído o error): no se lee hasta el próximo ciclo."""
+
+
 def _permitido(url: str) -> bool:
     u = urlparse(url)
     base = f"{u.scheme}://{u.netloc}"
     if base not in _robots:
-        rp: RobotFileParser | None = RobotFileParser()
         try:
             _esperar_turno(u.netloc)
             with _cliente(20) as c:
                 r = c.get(base + "/robots.txt")
-            if r.status_code >= 400:
-                rp = None  # sin robots.txt: no hay restricciones declaradas
-            else:
-                rp.parse(r.text.splitlines())
-        except Exception:
-            rp = None
+        except Exception as e:
+            raise RobotsNoDisponible(f"{base}: {type(e).__name__}") from e
+        if r.status_code >= 500 or r.status_code in (401, 403, 429):
+            raise RobotsNoDisponible(f"{base}: HTTP {r.status_code}")  # no se cachea: se reintenta el próximo ciclo
+        rp: RobotFileParser | None = None  # 404 u otro 4xx: el sitio no declara restricciones
+        if r.status_code < 400:
+            rp = RobotFileParser()
+            rp.parse(r.text.splitlines())
         _robots[base] = rp
     rp = _robots[base]
     return True if rp is None else rp.can_fetch(config.USER_AGENT, url)
@@ -89,7 +94,12 @@ def descargar(url: str, timeout: float = 45.0, motivo: str = "") -> str:
     if dominio in pausas and pausas[dominio] > config.ahora().isoformat():
         _bitacora(url, motivo, f"no leído: dominio pausado hasta {pausas[dominio]}")
         raise DominioPausado(f"{dominio} pausado hasta {pausas[dominio]}")
-    if not _permitido(url):
+    try:
+        permitido = _permitido(url)
+    except RobotsNoDisponible as e:
+        _bitacora(url, motivo, f"no leído: robots.txt no disponible ({e})")
+        raise
+    if not permitido:
         _bitacora(url, motivo, "no leído: robots.txt")
         raise BloqueadoPorRobots(url)
     _esperar_turno(dominio)

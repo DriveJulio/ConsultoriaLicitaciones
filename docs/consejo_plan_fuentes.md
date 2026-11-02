@@ -57,3 +57,62 @@ Están bien. Agregaría:
 4. Fase 3: J1/J2 (CABA/PBA) **antes** que N2–N8.
 5. Fase 4: N2, N5, N7 mensual; N4, N6, N8 a demanda; P4 para inteligencia.
 6. Fase 5: P6, P7, INDEC.
+
+## Asesor — respuesta al Especialista
+
+### 1. Acuerdos, desacuerdos y lo que no se vio
+
+**Acuerdo pleno:** ventana pre-apertura horaria; dictamen de evaluación como evento crítico; nada sale al cliente sin firma humana; J1/J2 antes que N2–N8; P4 como inteligencia, no alerta.
+
+**Desacuerdos / exageraciones:**
+- **"Solo GET, nunca formularios"** [INFERENCIA]: exagera. Las búsquedas públicas de COMPR.AR/BAC son formularios sin login; prohibirlos mata P2. La línea correcta es *sin credenciales ni evasión*, no *sin POST*.
+- **"Paridad informativa"**: bien como principio, mal como control: el riesgo real es **correlacionar de más** (datos de terceros).
+- **"Pausar 24 h ante bloqueo"**: arbitrario. Mejor: pausar + abrir issue + decisión humana.
+- **N8 Congreso "ruido puro"**: medio punto. Un proyecto de reforma es señal comercial para la consultora. Mensual.
+- **"IP argentina fija y declarada"**: correcto, pero es una decisión del dueño (asume por escrito que el sistema accede desde su infraestructura).
+
+**Lo que no se vio:**
+- **Responsabilidad profesional** [INFERENCIA]: si la IA calcula mal un plazo y el cliente lo pierde, responde la consultora. Falta: cláusula contractual sobre el alcance de la herramienta, doble cómputo (IA + humano) de plazos con consecuencia jurídica, seguro de RC profesional [A VERIFICAR cobertura local]. Es el riesgo n.º 1 del negocio.
+- **Huella del User-Agent** [INFERENCIA]: quien lea logs puede inferir qué sigue la consultora. El motivo va solo en la bitácora interna; el UA, sin nombre de cliente ni de expediente.
+- **Datos de terceros** [NORMA Ley 25.326 + INFERENCIA]: guardar actas para el seguimiento es defendible; armar perfiles históricos de competidores es otra finalidad. Requiere política escrita, retención con plazo y posible registro de la base [A VERIFICAR obligación ante la AAIP].
+- **robots.txt inaccesible = sin restricciones**: legalmente débil. Si el sitio da error, no leer hasta el próximo ciclo.
+- **Términos de uso de COMPR.AR/BAC** [A VERIFICAR]: pueden prohibir acceso automatizado aunque robots.txt lo permita. Fase 0 debe anotarlo por portal.
+- **Alucinación de plazos a escala**: un error en `marco_normativo.md` se replica a todos los clientes. Falta un test de regresión con casos reales (fecha disparador → vencimiento esperado).
+
+### 2. Mejoras de producto que no están en el plan
+
+| Mejora | Valor | Esfuerzo | Costo |
+|---|---|---|---|
+| Calendario de vencimientos por cliente (ICS/mail) con hecho disparador, norma y estado "confirmado por humano" | Altísimo | Medio | Bajo |
+| Checklist de aptitud del cliente (SIPRO, situación fiscal, registros de obra) con recordatorios | Alto | Bajo | Bajo |
+| Comparativo de ofertas post-apertura con borrador de observaciones/impugnación | Alto | Alto | Medio |
+| Resumen semanal por cliente firmado por un humano | Medio-alto | Medio | Bajo |
+| Modo "segunda opinión" de pliegos (monetizable por unidad) | Alto | Medio | Medio |
+
+### 3. Decisiones del dueño antes de arrancar
+
+- Mail de contacto y texto del User-Agent.
+- Dónde corre el monitor (VPS en Argentina u oficina) y titular de la IP.
+- Qué hacer si los términos de uso de un portal prohíben automatización.
+- Política de datos de terceros (qué, cuánto tiempo, si hay base histórica de competidores).
+- Cláusula contractual con clientes: la IA asiste, la consultora responde.
+- Quién firma cada alerta con consecuencia legal y en qué plazo.
+- Presupuesto mensual de tokens y tope de corte.
+- Jurisdicciones iniciales según cartera real.
+
+### 4. Priorización final
+
+1. Decisiones del punto 3 + Fase 0 + cláusula con clientes.
+2. Back-off y "robots inaccesible = no leer"; UA sin huella de cliente.
+3. Fase 1 (N1, P1/P3 con ventana pre-apertura, P5) + calendario de vencimientos con doble cómputo y test de regresión de plazos.
+4. Checklist de aptitud del cliente.
+5. P2 + N3 (módulo como evento).
+6. J1/J2.
+7. Comparativo de ofertas y "segunda opinión".
+8. Resto (N2–N8, P4 con política de datos, P6/P7, INDEC).
+
+## Estado de implementación tras el consejo
+
+- Hecho: robots.txt respetado; **robots inaccesible = no leer** (se reintenta el próximo ciclo); 5 s entre pedidos por dominio; bitácora interna con motivo (`data/accesos.jsonl`); UA con nombre del sistema + contacto, sin clientes ni expedientes; ante 403/429/503 se pausa el dominio 24 h **y se abre una alerta** para decisión humana.
+- Pendiente de decisión del dueño: ver sección 3 del Asesor.
+- Pendiente de desarrollo: ventana pre-apertura horaria, calendario de vencimientos con doble cómputo, test de regresión de plazos, checklist de aptitud del cliente, búsquedas públicas (P2).

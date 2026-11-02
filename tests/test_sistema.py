@@ -239,3 +239,24 @@ def test_freno_429_pausa_el_dominio(monkeypatch):
     with pytest.raises(web.DominioPausado):
         web.descargar("https://portal.gob.ar/y")
     assert "frenó el acceso" in (config.OUT_DIR / "alertas.md").read_text(encoding="utf-8")
+
+
+def test_robots_inaccesible_no_se_lee(monkeypatch):
+    monkeypatch.setattr(web, "_esperar_turno", lambda d: None)
+    monkeypatch.setattr(web, "_robots", {})
+
+    class C:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            assert url.endswith("/robots.txt"), "no debe pedir la página"
+            return SimpleNamespace(status_code=503, text="")
+
+    monkeypatch.setattr(web, "_cliente", lambda t: C())
+    with pytest.raises(web.RobotsNoDisponible):
+        web.descargar("https://caido.gob.ar/x")
+    assert web._robots == {}  # no se cachea: se reintenta el próximo ciclo
