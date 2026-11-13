@@ -7,3 +7,5 @@
 {"fecha": "2026-11-11T15:45:22-03:00", "url": "https://www.boletinoficial.gob.ar/seccion/primera/20261111", "motivo": "boletin: sumario primera seccion", "resultado": "no leído: robots.txt no disponible (https://www.boletinoficial.gob.ar: ConnectTimeout)"}
 {"fecha": "2026-11-12T15:59:22-03:00", "url": "https://www.boletinoficial.gob.ar/seccion/primera/20261112", "motivo": "boletin: sumario primera seccion", "resultado": "ok 200"}
 {"fecha": "2026-11-12T15:59:26-03:00", "url": "https://www.boletinoficial.gob.ar/detalleAviso/primera/350230/20261112", "motivo": "boletin: aviso candidato", "resultado": "ok 200"}
+{"fecha": "2026-11-13T15:35:54-03:00", "url": "https://www.boletinoficial.gob.ar/seccion/primera/20261113", "motivo": "boletin: sumario primera seccion", "resultado": "ok 200"}
+{"fecha": "2026-11-13T15:35:59-03:00", "url": "https://www.boletinoficial.gob.ar/detalleAviso/primera/350271/20261113", "motivo": "boletin: aviso candidato", "resultado": "ok 200"}
